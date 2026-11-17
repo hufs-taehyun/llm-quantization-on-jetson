@@ -1,0 +1,14 @@
+# 데이터·모델·실행 결과물은 올리지 않음
+data/
+dataset/
+*.zip
+*.onnx
+*.pt
+*.engine
+out*/
+calib_*/
+*.log
+__pycache__/
+
+# 도구 상태 파일
+.omc/
