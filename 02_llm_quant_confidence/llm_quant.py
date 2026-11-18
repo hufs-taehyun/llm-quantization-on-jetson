@@ -7,7 +7,7 @@ ARC-Challenge에서 정확도·확신 오답을 재고, 층별 민감도로 혼�
   final : test 전체 — FP16, W8, W4, Mixed-k2, Mixed-k4 (층 순위는 sens 결과에서만 가져옴)
 사용: python llm_quant.py --stage smoke|sens|final --out results
 """
-import argparse, glob, json, time
+import argparse, ctypes, gc, glob, json, time
 from pathlib import Path
 
 import numpy as np
@@ -33,6 +33,9 @@ torch.manual_seed(0)
 tok = AutoTokenizer.from_pretrained(a.model)
 DT = torch.float16 if a.dtype == "fp16" else torch.bfloat16
 model = AutoModelForCausalLM.from_pretrained(a.model, torch_dtype=DT).cuda().eval()
+# GPU로 옮긴 뒤에도 glibc가 CPU 쪽 사본(약 3GB)을 OS에 돌려주지 않는다. Jetson은 CPU·GPU가 메모리를 같이 쓰므로
+# 그대로 두면 여유가 0.7GB까지 줄어든다(Qwen 실측 661MB → 반환 후 3,094MB). 계산값과는 무관.
+gc.collect(); ctypes.CDLL("libc.so.6").malloc_trim(0)
 LIN = {n: m for n, m in model.named_modules() if isinstance(m, nn.Linear) and n.startswith("model.layers.")}
 N_LAYERS = model.config.num_hidden_layers
 KINDS = ["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"]

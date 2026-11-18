@@ -1,0 +1,20 @@
+{
+  "fp16": {
+    "acc": 0.4255,
+    "confident_wrong": 0.0215,
+    "mean_letter_mass": 0.9927683096648506,
+    "agree_fp16": 1.0
+  },
+  "w8": {
+    "acc": 0.4255,
+    "confident_wrong": 0.0225,
+    "mean_letter_mass": 0.9927661104552681,
+    "agree_fp16": 0.971
+  },
+  "w4": {
+    "acc": 0.3935,
+    "confident_wrong": 0.0035,
+    "mean_letter_mass": 0.9479606672161317,
+    "agree_fp16": 0.595
+  }
+}
