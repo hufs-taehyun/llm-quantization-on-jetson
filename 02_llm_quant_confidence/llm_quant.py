@@ -22,13 +22,17 @@ p.add_argument("--stage", choices=["smoke", "sens", "final"], required=True)
 p.add_argument("--model", default=str(Path.home() / "llm/qwen15"))
 p.add_argument("--data", default=str(Path.home() / "llm"))
 p.add_argument("--out", default="results")
+p.add_argument("--dataset", choices=["arc", "mmlu"], default="arc")
+p.add_argument("--dtype", choices=["fp16", "bf16"], default="fp16", help="양자화하지 않은 층의 자료형")
 a = p.parse_args()
 out = Path(a.out); out.mkdir(exist_ok=True)
 LET, THR = ["A", "B", "C", "D"], 0.8
+MMLU_N = 2000  # MMLU test에서 seed 0으로 뽑는 문항 수 (실행 전 고정, PLAN.md 확장 절)
 torch.manual_seed(0)
 
 tok = AutoTokenizer.from_pretrained(a.model)
-model = AutoModelForCausalLM.from_pretrained(a.model, torch_dtype=torch.float16).cuda().eval()
+DT = torch.float16 if a.dtype == "fp16" else torch.bfloat16
+model = AutoModelForCausalLM.from_pretrained(a.model, torch_dtype=DT).cuda().eval()
 LIN = {n: m for n, m in model.named_modules() if isinstance(m, nn.Linear) and n.startswith("model.layers.")}
 N_LAYERS = model.config.num_hidden_layers
 KINDS = ["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"]
@@ -64,7 +68,7 @@ def apply(cfg):
         if STATE[n] == want:
             continue
         w0 = SRC[n + ".weight"].get_tensor(n + ".weight").cuda()
-        m.weight.data.copy_(w0 if want == "fp16" else rtn(w0, want).half())
+        m.weight.data.copy_(w0 if want == "fp16" else rtn(w0, want).to(DT))
         STATE[n] = want
 
 
@@ -79,8 +83,15 @@ LID = letter_ids()
 
 
 def load(split, limit=0):
-    df = pd.read_parquet(f"{a.data}/arc_{split}.parquet")
-    df = df[df["choices"].apply(lambda c: list(c["label"]) == LET)].reset_index(drop=True)
+    if a.dataset == "arc":
+        df = pd.read_parquet(f"{a.data}/arc_{split}.parquet")
+        df = df[df["choices"].apply(lambda c: list(c["label"]) == LET)].reset_index(drop=True)
+    else:  # MMLU(보기 4개 목록 + 정답 번호)를 ARC 형식으로 맞춘다. test만 사용
+        m = pd.read_parquet(f"{a.data}/mmlu_test.parquet")
+        df = pd.DataFrame({"id": [f"{s}_{i}" for i, s in enumerate(m["subject"])], "question": m["question"],
+                           "choices": [{"label": LET, "text": list(c)} for c in m["choices"]],
+                           "answerKey": [LET[int(x)] for x in m["answer"]]})
+        df = df.sample(n=MMLU_N, random_state=0).reset_index(drop=True)
     return df.head(limit) if limit else df
 
 
@@ -123,7 +134,7 @@ def save(rows, name):
 
 
 if a.stage == "smoke":
-    df = load("validation", 20); cache = [enc(r) for _, r in df.iterrows()]
+    df = load("validation" if a.dataset == "arc" else "test", 20); cache = [enc(r) for _, r in df.iterrows()]
     t = time.time(); rows = evaluate(df, cache); dt = (time.time() - t) / len(df)
     print("smoke", summ(rows), f"{dt * 1000:.0f} ms/question", flush=True)
     apply(all_mode("w4")); print("smoke w4", summ(evaluate(df, cache), rows), flush=True); apply({})
@@ -151,11 +162,12 @@ elif a.stage == "sens":
     print("layer_rank", rank[:8]); print("DONE")
 
 else:
-    rank = json.load(open(out / "sens_validation.json", encoding="utf-8"))["layer_rank"]
+    sens = out / "sens_validation.json"  # 없으면(MMLU) 혼합 정밀도 없이 FP16·W8·W4만
+    rank = json.load(open(sens, encoding="utf-8"))["layer_rank"] if sens.exists() else []
     df = load("test"); cache = [enc(r) for _, r in df.iterrows()]
     print("test questions", len(df), "rank top4", rank[:4], flush=True)
     cfgs = {"fp16": {}, "w8": all_mode("w8"), "w4": all_mode("w4")}
-    for k in (2, 4):
+    for k in ((2, 4) if rank else ()):
         keep = {f"model.layers.{li}." for li in rank[:k]}
         cfgs[f"mixed_k{k}"] = {n: ("w8" if any(n.startswith(p_) for p_ in keep) else "w4") for n in LIN}
     ref, summary = None, {}

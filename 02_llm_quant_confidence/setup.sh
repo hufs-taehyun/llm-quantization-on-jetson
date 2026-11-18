@@ -14,6 +14,10 @@ snapshot_download("Qwen/Qwen2.5-1.5B-Instruct", local_dir="qwen15")
 base = "https://huggingface.co/datasets/allenai/ai2_arc/resolve/main/ARC-Challenge/"
 for split in ("validation", "test"):
     pd.read_parquet(base + f"{split}-00000-of-00001.parquet").to_parquet(f"arc_{split}.parquet")
+# 확장(PLAN.md 확장 절): 다른 계열 모델 + 다른 데이터
+snapshot_download("HuggingFaceTB/SmolLM2-1.7B-Instruct", local_dir="smol17",
+                  allow_patterns=["*.json", "*.safetensors", "*.txt"])
+pd.read_parquet("https://huggingface.co/datasets/cais/mmlu/resolve/main/all/test-00000-of-00001.parquet").to_parquet("mmlu_test.parquet")
 EOF
-du -sh qwen15; ls -la arc_*.parquet
+du -sh qwen15 smol17; ls -la *.parquet
 echo SETUP_DONE
