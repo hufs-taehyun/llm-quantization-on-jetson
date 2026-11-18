@@ -1,0 +1,5 @@
+start 04:16:25 oc3 18797
+NV Power Mode: 25W
+Mem:            7619        1431        3779          14        2408        5932
+bench_start 04:16:30
+bench_end 04:18:12 exit 0 oc3 18797

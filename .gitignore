@@ -12,3 +12,4 @@ __pycache__/
 
 # 도구 상태 파일
 .omc/
+04_llm_gguf_on_device/res_*/server_*.log
